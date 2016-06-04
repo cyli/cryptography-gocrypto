@@ -24,7 +24,7 @@ void DownRef(GoInt);
 """)
 
 curdir = os.path.dirname(os.path.abspath(__file__))
-lib = ffi.dlopen(os.path.join(curdir, "gocrypto"))
+lib = ffi.dlopen(os.path.join(curdir, "gocrypto.so"))
 
 
 class Binding(object):

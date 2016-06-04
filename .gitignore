@@ -4,3 +4,5 @@ _build
 .coverage
 *.egg-info
 .tox
+src/cryptography_gocrypto/gocrypto.h
+src/cryptography_gocrypto/gocrypto.so

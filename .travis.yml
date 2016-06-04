@@ -11,10 +11,14 @@ matrix:
     - python: 3.5
       env: TOXENV=py35
 
+before_install:
+  - sudo add-apt-repository ppa:ubuntu-lxc/lxd-stable
+  - sudo apt-get update -qq
+  - sudo apt-get install golang
 
 install:
-  - |
-    pip install tox codecov
+  - pip install tox codecov
+  - go build -o src/cryptography_gocrypto/gocrypto.so -buildmode=c-shared gosrc/main.go
 
 script:
   - tox
