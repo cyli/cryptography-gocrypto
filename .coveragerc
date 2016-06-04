@@ -1,0 +1,12 @@
+[run]
+branch = True
+source =
+    cryptography_gocrypto
+
+
+[paths]
+source =
+   src/cryptography_gocrypto
+   .tox/*/lib/python*/site-packages/cryptography_gocrypto
+   .tox/pypy/site-packages/cryptography_gocrypto
+
