@@ -1,0 +1,15 @@
+{
+	"ImportPath": "github.com/cyli/cryptography-gocrypto",
+	"GoVersion": "go1.6",
+	"GodepVersion": "v60",
+	"Deps": [
+		{
+			"ImportPath": "golang.org/x/crypto/blowfish",
+			"Rev": "bfc286917c5fcb7420d7e3092b50bbfd31b38a98"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/cast5",
+			"Rev": "bfc286917c5fcb7420d7e3092b50bbfd31b38a98"
+		}
+	]
+}

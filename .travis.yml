@@ -2,13 +2,13 @@ sudo: false
 language: python
 cache:
   directories:
-    - $HOME/.cache/pip
-    - $HOME/go
+    - $HOME/.cache
 env:
   global:
     - GO_VERSION=1.6.2
     - PATH=$HOME/go/bin:$PATH
-    - GOPATH=$HOME/go
+    - GOROOT=$HOME/go
+    - GOPATH=$HOME/gopath
 
 matrix:
   include:
@@ -18,10 +18,12 @@ matrix:
       env: TOXENV=py35
 
 before_install:
-  - mkdir -p $HOME/go
-  - curl -z $HOME/go/go1.6.2.linux-amd64.tar.gz -o $HOME/go/go1.6.2.linux-amd64.tar.gz https://storage.googleapis.com/golang/go$GO_VERSION.linux-amd64.tar.gz
-  - tar -C $HOME -xzf $HOME/go/go$GO_VERSION.linux-amd64.tar.gz
-  - go get golang.org/x/crypto/...
+  - mkdir -p $GOPATH
+  - curl -z $HOME/.cache/go1.6.2.linux-amd64.tar.gz -o $HOME/.cache/go1.6.2.linux-amd64.tar.gz https://storage.googleapis.com/golang/go$GO_VERSION.linux-amd64.tar.gz
+  - tar -C $HOME -xzf $HOME/.cache/go$GO_VERSION.linux-amd64.tar.gz
+  - cp -r gosrc/vendor $GOPATH/src
+  - ls -R $GOPATH
+  - go version
 
 install:
   - pip install tox codecov
