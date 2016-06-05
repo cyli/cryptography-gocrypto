@@ -12,7 +12,7 @@ from cryptography.hazmat.backends.interfaces import (
 from cryptography_gocrypto.binding import Binding
 from cryptography_gocrypto.hashes import _HashContext
 from cryptography_gocrypto.hmac import _HMACContext
-from cryptography_gocrypto.ciphers import _CipherContext
+from cryptography_gocrypto.ciphers import _CipherContext, is_cipher_supported
 
 
 @utils.register_interface(CipherBackend)
@@ -42,8 +42,7 @@ class Backend(object):
         return _HMACContext(self, algorithm, key)
 
     def cipher_supported(self, cipher, mode):
-        return self._lib.IsCipherSupported(
-            cipher.name.lower(), mode.name.lower()) == 1
+        return is_cipher_supported(self, cipher, mode)
 
     def create_symmetric_encryption_ctx(self, cipher, mode):
         # 0 for decryption, 1 for encryption

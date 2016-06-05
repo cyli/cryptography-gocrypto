@@ -201,6 +201,13 @@ type cipherer struct {
 }
 
 var supportedBlockModes = map[string]func(cipher.Block, []byte, C.int) cipherer{
+	"ecb": func(b cipher.Block, _ []byte, operation C.int) cipherer {
+		// just pipe things directly into the block
+		if operation == 0 {
+			return cipherer{block: b, updater: b.Decrypt}
+		}
+		return cipherer{block: b, updater: b.Encrypt}
+	},
 	"cbc": func(b cipher.Block, iv []byte, operation C.int) cipherer {
 		c := cipherer{block: b}
 		switch operation {
@@ -232,6 +239,7 @@ func IsCipherSupported(cipherChar *C.char, modeChar *C.char) C.int {
 //export CreateCipher
 func CreateCipher(cipherChar *C.char, modeChar *C.char, operation C.int,
 	ivChar *C.char, ivLen C.int, keyChar *C.char, keyLen C.int) C.longlong {
+	// we are counting 0 as decryption, 1 as encryption (alphabetical)
 
 	cipherType := C.GoString(cipherChar)
 	modeType := C.GoString(modeChar)
@@ -244,6 +252,7 @@ func CreateCipher(cipherChar *C.char, modeChar *C.char, operation C.int,
 	}
 	block, err := blockFactory(key)
 	if err != nil {
+		log.Printf("Creating block cipher %s with key len %d failed: %v\n", cipherType, keyLen, err)
 		return C.longlong(-1)
 	}
 
@@ -265,7 +274,11 @@ func UpdateCipher(id C.longlong, dst *C.char, srcChar *C.char, srcLen C.int) C.i
 			}
 
 			src := C.GoBytes(unsafe.Pointer(srcChar), srcLen)
-			ctx.updater(src, src)
+			// update in blocks of BlockSize
+			for i := 0; i < int(srcLen); i += ctx.block.BlockSize() {
+				chunk := src[i : i+ctx.block.BlockSize()]
+				ctx.updater(chunk, chunk)
+			}
 			cBuf := (*[1 << 30]byte)(unsafe.Pointer(dst))
 			copy(cBuf[:], src)
 			return C.int(1)
