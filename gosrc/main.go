@@ -51,9 +51,8 @@ func (p *pointerProxy) DownRef(id C.longlong) {
 	p.Lock()
 	if r, ok := p.cache[id]; ok {
 		if r.refCount-1 == 0 {
-			log.Printf("downref ID %d: no more refs, so deleting\b", id)
+			log.Printf("downref ID %d: no more refs, so deleting, and freeing %d data\n", id, len(r.freeableData))
 			for _, ptr := range r.freeableData {
-				log.Printf("\tdownref ID %d: freeing attached data\n", id)
 				C.free(ptr)
 			}
 			delete(p.cache, id)

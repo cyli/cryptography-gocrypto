@@ -16,6 +16,9 @@ def is_cipher_supported(backend, cipher, mode):
     """
     return (isinstance(cipher, BlockCipherAlgorithm) and
             isinstance(mode, modes.Mode) and
+            # strangeness with go cast5 require 16 byte keys - skip for now
+            cipher.name != "CAST5" and
+            # ----
             backend._lib.IsCipherSupported(
                 cipher.name.lower(), mode.name.lower()) == 1)
 
@@ -41,7 +44,6 @@ class _CipherContext(object):
         elif isinstance(mode, modes.ModeWithNonce):
             iv_or_nonce = mode.nonce
 
-        print("python", cipher.key_sizes)
         ctx = self._backend._lib.CreateCipher(
             cipher.name.lower(), mode.name.lower(), operation,
             iv_or_nonce, len(iv_or_nonce),
@@ -61,7 +63,6 @@ class _CipherContext(object):
         block_size = self._cipher.block_size // 8
         to_update = self._buffer[
             :(len(self._buffer) // block_size) * block_size]
-        print("block size:", block_size, to_update)
         if to_update:
             dst = self._backend._ffi.new("char []", len(to_update))
             self._backend._lib.UpdateCipher(
