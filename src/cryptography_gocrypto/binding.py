@@ -27,7 +27,9 @@ void DownRef(long long);
 """)
 
 curdir = os.path.dirname(os.path.abspath(__file__))
-lib = ffi.dlopen(os.path.join(curdir, "gocrypto.so"))
+# allow overriding where the gocrypto lib is
+lib = ffi.dlopen(
+    os.getenv("GOCRYPTO_LIB", os.path.join(curdir, "gocrypto.so")))
 
 
 class Binding(object):

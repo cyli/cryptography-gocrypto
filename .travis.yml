@@ -9,6 +9,7 @@ env:
     - PATH=$HOME/go/bin:$PATH
     - GOROOT=$HOME/go
     - GOPATH=$HOME/gopath
+    - GOCRYPTO_LIB=$TRAVIS_BUILD_DIR/src/cryptography_gocrypto/gocrypto.so
 
 matrix:
   include:
