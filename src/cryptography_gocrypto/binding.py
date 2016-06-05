@@ -11,19 +11,18 @@ import cffi
 
 ffi = cffi.FFI()
 ffi.cdef("""
-typedef long long GoInt64;
-typedef GoInt64 GoInt;
-GoInt CreateHash(char *);
-void UpdateHash(GoInt, char *, GoInt);
-char *FinalizeHash(GoInt);
-GoInt CreateHMAC(char *, char *, int);
-void UpdateHMAC(GoInt, char *, int);
-char* FinalizeHMAC(GoInt);
-GoInt CreateCipher(char *, char *, int, char *, int, char *, int);
-void UpdateCipher(GoInt, char *, char *, int);
+long long CreateHash(char *);
+void UpdateHash(long long, char *, int);
+char *FinalizeHash(long long);
+long long CreateHMAC(char *, char *, int);
+void UpdateHMAC(long long, char *, int);
+char* FinalizeHMAC(long long);
+long long CreateCipher(char *, char *, int, char *, int, char *, int);
+void UpdateCipher(long long, char *, char *, int);
+long long CopyHashOrHMAC(long long);
 
-void UpRef(GoInt);
-void DownRef(GoInt);
+void UpRef(long long);
+void DownRef(long long);
 """)
 
 curdir = os.path.dirname(os.path.abspath(__file__))

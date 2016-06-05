@@ -14,19 +14,19 @@ from cryptography.hazmat.primitives import constant_time, hashes, interfaces
 @utils.register_interface(interfaces.MACContext)
 @utils.register_interface(hashes.HashContext)
 class _HMACContext(object):
-    def __init__(self, backend, algorithm, key):
+    def __init__(self, backend, algorithm, key, ctx=None):
         self._algorithm = algorithm
         self._backend = backend
 
-        ctx = self._backend._lib.CreateHMAC(algorithm.name, key, len(key))
-        if ctx == 0:
-            raise UnsupportedAlgorithm(
-                "{0} is not a supported for HMAC on this backend.".format(
-                    algorithm.name),
-                _Reasons.UNSUPPORTED_HASH
-            )
+        if ctx is None:
+            ctx = self._backend._lib.CreateHMAC(algorithm.name, key, len(key))
+            if ctx == 0:
+                raise UnsupportedAlgorithm(
+                    "{0} is not a supported for HMAC on this backend.".format(
+                        algorithm.name),
+                    _Reasons.UNSUPPORTED_HASH
+                )
         ctx = self._backend._ffi.new("long long *", ctx)
-
         ctx = self._backend._ffi.gc(
             ctx, lambda x: backend._lib.DownRef(x[0])
         )
@@ -36,7 +36,9 @@ class _HMACContext(object):
     algorithm = utils.read_only_property("_algorithm")
 
     def copy(self):
-        raise NotImplementedError
+        return _HMACContext(self._backend, self._algorithm, None, # key is same
+                            self._backend._lib.CopyHashOrHMAC(self._ctx[0]))
+
 
     def update(self, data):
         self._backend._lib.UpdateHMAC(self._ctx[0], data, len(data))
