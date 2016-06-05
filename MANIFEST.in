@@ -2,5 +2,6 @@ include LICENSE
 include LICENSE.APACHE
 include LICENSE.BSD
 include README.rst
+include src/cryptography_gocrypto/gocrypto.so
 
 recursive-include docs *

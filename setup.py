@@ -70,6 +70,7 @@ setup(
     ],
 
     package_dir={"": "src"},
+    package_data={"cryptography_gocrypto": ["gocrypto.so"]},
     packages=find_packages(where="src"),
     install_requires=requirements,
     tests_require=test_requirements,
