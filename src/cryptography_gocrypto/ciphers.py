@@ -18,14 +18,22 @@ class _CipherContext(object):
         self._mode = mode
         self._operation = operation
 
-        # iv is only for cbc
+        if isinstance(mode, modes.ModeWithInitializationVector):
+            iv_or_nonce = mode.initialization_vector
+        else:
+            iv_or_nonce = mode.nonce
+
         ctx = self._backend._lib.CreateCipher(
-            cipher.name, mode.name, operation,
-            mode.initialization_vector, len(mode.initialization_vector),
+            cipher.name.lower(), mode.name.lower(), operation,
+            iv_or_nonce, len(iv_or_nonce),
             cipher.key, len(cipher.key))
 
-        if ctx == 0:
-            raise Exception("who knows")
+        if ctx == -1:
+            raise UnsupportedAlgorithm(
+                ("cipher {0} in {1} mode is not supported by this backend,"
+                "or errored").format(cipher.name, mode.name if mode else mode),
+                _Reasons.UNSUPPORTED_CIPHER
+            )
 
         self._ctx = ctx
         self._buffer = []

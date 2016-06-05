@@ -6,6 +6,7 @@ import "C"
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/des"
 	"crypto/hmac"
 	"crypto/md5"
 	"crypto/sha1"
@@ -16,7 +17,14 @@ import (
 	"reflect"
 	"sync"
 	"unsafe"
+
+	"golang.org/x/crypto/blowfish"
+	"golang.org/x/crypto/cast5"
 )
+
+// memory management hack; cryptography API requires updating existing hashes,
+// HMACs, and ciphers, so we need to cache them so they don't get GCed while
+// Python might still be referencing it
 
 type pointerProxy struct {
 	sync.Mutex
@@ -61,7 +69,7 @@ func (p *pointerProxy) Cache(ctx interface{}) C.longlong {
 	p.Lock()
 	p.counter++
 	id := C.longlong(p.counter)
-	ptrProxy.cache[id] = &refCounter{
+	ptrProxy().cache[id] = &refCounter{
 		opaqueObject: ctx,
 		refCount:     1,
 	}
@@ -69,13 +77,18 @@ func (p *pointerProxy) Cache(ctx interface{}) C.longlong {
 	return id
 }
 
-var ptrProxy pointerProxy
+var _ptrProxy *pointerProxy
 
-func init() {
-	ptrProxy = pointerProxy{
-		cache: make(map[C.longlong]*refCounter),
+func ptrProxy() *pointerProxy {
+	if _ptrProxy == nil {
+		_ptrProxy = &pointerProxy{
+			cache: make(map[C.longlong]*refCounter),
+		}
 	}
+	return _ptrProxy
 }
+
+// ----- Hashes and HMAC support -----
 
 var supportedHashes = map[string]func() hash.Hash{
 	"sha1":   sha1.New,
@@ -99,14 +112,14 @@ func IsHashSupported(hashChar *C.char) C.int {
 func CreateHash(hashChar *C.char) C.longlong {
 	hashType := C.GoString(hashChar)
 	if hashFactory, ok := supportedHashes[hashType]; ok {
-		return ptrProxy.Cache(hashFactory())
+		return ptrProxy().Cache(hashFactory())
 	}
-	return C.longlong(0)
+	return C.longlong(-1)
 }
 
 //export UpdateHashOrHMAC
 func UpdateHashOrHMAC(id C.longlong, data *C.char, dataLen C.int) C.int {
-	if refCounter, ok := ptrProxy.cache[id]; ok {
+	if refCounter, ok := ptrProxy().cache[id]; ok {
 		if ctx, ok := refCounter.opaqueObject.(hash.Hash); ok {
 			goData := C.GoBytes(unsafe.Pointer(data), dataLen)
 			ctx.Write(goData)
@@ -118,7 +131,7 @@ func UpdateHashOrHMAC(id C.longlong, data *C.char, dataLen C.int) C.int {
 
 //export FinalizeHashOrHMAC
 func FinalizeHashOrHMAC(id C.longlong) *C.char {
-	if refCounter, ok := ptrProxy.cache[id]; ok {
+	if refCounter, ok := ptrProxy().cache[id]; ok {
 		if ctx, ok := refCounter.opaqueObject.(hash.Hash); ok {
 			digest := C.CString(string(ctx.Sum(nil)))
 			refCounter.freeableData = append(refCounter.freeableData, unsafe.Pointer(digest))
@@ -143,9 +156,9 @@ func copyHash(src hash.Hash) hash.Hash {
 
 //export CopyHashOrHMAC
 func CopyHashOrHMAC(id C.longlong) C.longlong {
-	if refCounter, ok := ptrProxy.cache[id]; ok {
+	if refCounter, ok := ptrProxy().cache[id]; ok {
 		if ctx, ok := refCounter.opaqueObject.(hash.Hash); ok {
-			return ptrProxy.Cache(copyHash(ctx))
+			return ptrProxy().Cache(copyHash(ctx))
 		}
 	}
 	return C.longlong(0)
@@ -156,75 +169,103 @@ func CreateHMAC(hashChar *C.char, keyChar *C.char, keyLen C.int) C.longlong {
 	key := C.GoBytes(unsafe.Pointer(keyChar), keyLen)
 	hashType := C.GoString(hashChar)
 	if hashFactory, ok := supportedHashes[hashType]; ok {
-		return ptrProxy.Cache(hmac.New(hashFactory, key))
+		return ptrProxy().Cache(hmac.New(hashFactory, key))
 	}
-	return C.longlong(0)
+	return C.longlong(-1)
 }
 
-// type cipherConstructor struct {
-// 	blockConstructorTakesKey func([]byte) (cipher.Block, int, error)
-// 	blockSize                int
-// }
+// ----- Cipher support -----
 
-// type blockCipherer struct {
-// 	block cipher.Block
-// 	iv []byte
-// 	encrypt bool
+var supportedBlockCiphers = map[string]func([]byte) (cipher.Block, error){
+	"aes":  aes.NewCipher,
+	"3des": des.NewTripleDESCipher,
+	"blowfish": func(key []byte) (cipher.Block, error) {
+		c, err := blowfish.NewCipher(key)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	},
+	"cast5": func(key []byte) (cipher.Block, error) {
+		c, err := cast5.NewCipher(key)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	},
+}
 
-// 	buffer []byte
-// }
+type cipherer struct {
+	block   cipher.Block
+	updater func(a, b []byte)
+}
 
-// var supportedCiphers = map[string]cipherConstructor{
-// 	"aes": cipherConstructor{
-// 		blockConstructorTakesKey: aes.NewCipher,
-// 		blockSize: aes.BlockSize,
-// 	},
-// 	// "blowfish": blowfish.NewCipher,
-// 	// "cast5":    cast5.NewCipher,
-// 	// "des":      des.NewCipher,
-// }
+var supportedBlockModes = map[string]func(cipher.Block, []byte, C.int) cipherer{
+	"cbc": func(b cipher.Block, iv []byte, operation C.int) cipherer {
+		c := cipherer{block: b}
+		switch operation {
+		case 0:
+			c.updater = cipher.NewCBCDecrypter(b, iv).CryptBlocks
+		default:
+			c.updater = cipher.NewCBCEncrypter(b, iv).CryptBlocks
+		}
+		return c
+	},
+	// "ctr": func(b cipher.Block, iv []byte, _ C.int) cipherer {
+	// 	return cipherer{block: b, updater: cipher.NewCTR(b, iv).XORKeyStream}
+	// },
+}
 
-// var supportedModes = map[string]... {
-// 	"cbc":
-// }
+//export IsCipherSupported
+func IsCipherSupported(cipherChar *C.char, modeChar *C.char) C.int {
+	cipherType := C.GoString(cipherChar)
+	modeType := C.GoString(modeChar)
+	_, cipherSupported := supportedBlockCiphers[cipherType]
+	_, modeSupported := supportedBlockModes[modeType]
+
+	if cipherSupported && modeSupported {
+		return C.int(1)
+	}
+	return C.int(0)
+}
 
 //export CreateCipher
 func CreateCipher(cipherChar *C.char, modeChar *C.char, operation C.int,
 	ivChar *C.char, ivLen C.int, keyChar *C.char, keyLen C.int) C.longlong {
 
-	// cipherType := C.GoString(cipherChar)
-	// modeType := C.GoString(modeChar)
+	cipherType := C.GoString(cipherChar)
+	modeType := C.GoString(modeChar)
 	iv := C.GoBytes(unsafe.Pointer(ivChar), ivLen)
 	key := C.GoBytes(unsafe.Pointer(keyChar), keyLen)
 
-	aesBlock, err := aes.NewCipher(key)
+	blockFactory, ok := supportedBlockCiphers[cipherType]
+	if !ok {
+		return C.longlong(-1)
+	}
+	block, err := blockFactory(key)
 	if err != nil {
-		return C.longlong(0)
+		return C.longlong(-1)
 	}
 
-	var ctx cipher.BlockMode
-	switch operation {
-	case 0:
-		ctx = cipher.NewCBCEncrypter(aesBlock, iv)
-	default:
-		ctx = cipher.NewCBCDecrypter(aesBlock, iv)
+	modeFactory, ok := supportedBlockModes[modeType]
+	if !ok {
+		return C.longlong(-1)
 	}
-
-	return ptrProxy.Cache(ctx)
+	return ptrProxy().Cache(modeFactory(block, iv, operation))
 }
 
 // assumption is that srcLen is always a multiple of the block size
 
 //export UpdateCipher
 func UpdateCipher(id C.longlong, dst *C.char, srcChar *C.char, srcLen C.int) C.int {
-	if refCounter, ok := ptrProxy.cache[id]; ok {
-		if ctx, ok := refCounter.opaqueObject.(cipher.BlockMode); ok {
-			if int(srcLen)%ctx.BlockSize() != 0 {
+	if refCounter, ok := ptrProxy().cache[id]; ok {
+		if ctx, ok := refCounter.opaqueObject.(cipherer); ok {
+			if int(srcLen)%ctx.block.BlockSize() != 0 {
 				log.Fatalf("Passed non-block-aligned data to a block cipher")
 			}
 
 			src := C.GoBytes(unsafe.Pointer(srcChar), srcLen)
-			ctx.CryptBlocks(src, src)
+			ctx.updater(src, src)
 			cBuf := (*[1 << 30]byte)(unsafe.Pointer(dst))
 			copy(cBuf[:], src)
 			return C.int(1)
@@ -235,12 +276,12 @@ func UpdateCipher(id C.longlong, dst *C.char, srcChar *C.char, srcLen C.int) C.i
 
 //export UpRef
 func UpRef(id C.longlong) {
-	ptrProxy.UpRef(id)
+	ptrProxy().UpRef(id)
 }
 
 //export DownRef
 func DownRef(id C.longlong) {
-	ptrProxy.DownRef(id)
+	ptrProxy().DownRef(id)
 }
 
 func main() {}

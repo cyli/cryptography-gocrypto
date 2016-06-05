@@ -17,8 +17,10 @@ int UpdateHashOrHMAC(long long, char *, int);
 char * FinalizeHashOrHMAC(long long);
 long long CopyHashOrHMAC(long long);
 long long CreateHMAC(char *, char *, int);
+
 long long CreateCipher(char *, char *, int, char *, int, char *, int);
 int UpdateCipher(long long, char *, char *, int);
+int IsCipherSupported(char *, char *);
 
 void UpRef(long long);
 void DownRef(long long);

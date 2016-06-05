@@ -20,7 +20,7 @@ class _HMACContext(object):
 
         if ctx is None:
             ctx = self._backend._lib.CreateHMAC(algorithm.name, key, len(key))
-            if ctx == 0:
+            if ctx == -1:
                 raise UnsupportedAlgorithm(
                     "{0} is not a supported for HMAC on this backend.".format(
                         algorithm.name),

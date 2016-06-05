@@ -42,13 +42,16 @@ class Backend(object):
         return _HMACContext(self, algorithm, key)
 
     def cipher_supported(self, cipher, mode):
-        return cipher.name == "AES" and mode.name == "CBC"
+        return self._lib.IsCipherSupported(
+            cipher.name.lower(), mode.name.lower()) == 1
 
     def create_symmetric_encryption_ctx(self, cipher, mode):
-        return _CipherContext(self, cipher, mode, 0)
+        # 0 for decryption, 1 for encryption
+        return _CipherContext(self, cipher, mode, 1)
 
     def create_symmetric_decryption_ctx(self, cipher, mode):
-        return _CipherContext(self, cipher, mode, 1)
+        # 0 for decryption, 1 for encryption
+        return _CipherContext(self, cipher, mode, 0)
 
 
 backend = Backend()

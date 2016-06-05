@@ -17,7 +17,7 @@ class _HashContext(object):
 
         if ctx is None:
             ctx = self._backend._lib.CreateHash(algorithm.name)
-            if ctx == 0:
+            if ctx == -1:
                 raise UnsupportedAlgorithm(
                     "{0} is not a supported hash on this backend.".format(
                         algorithm.name),
