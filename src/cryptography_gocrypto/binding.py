@@ -11,15 +11,14 @@ import cffi
 
 ffi = cffi.FFI()
 ffi.cdef("""
+int IsHashSupported(char *);
 long long CreateHash(char *);
-void UpdateHash(long long, char *, int);
-char *FinalizeHash(long long);
-long long CreateHMAC(char *, char *, int);
-void UpdateHMAC(long long, char *, int);
-char* FinalizeHMAC(long long);
-long long CreateCipher(char *, char *, int, char *, int, char *, int);
-void UpdateCipher(long long, char *, char *, int);
+int UpdateHashOrHMAC(long long, char *, int);
+char * FinalizeHashOrHMAC(long long);
 long long CopyHashOrHMAC(long long);
+long long CreateHMAC(char *, char *, int);
+long long CreateCipher(char *, char *, int, char *, int, char *, int);
+int UpdateCipher(long long, char *, char *, int);
 
 void UpRef(long long);
 void DownRef(long long);

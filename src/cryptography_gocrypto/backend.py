@@ -30,12 +30,7 @@ class Backend(object):
         self._lib = self._binding.lib
 
     def hash_supported(self, algorithm):
-        result = self._lib.CreateHash(algorithm.name)
-        if result:
-            self._lib.DownRef(result)
-            return True
-        else:
-            return False
+        return self._lib.IsHashSupported(algorithm.name) == 1
 
     def create_hash_ctx(self, algorithm):
         return _HashContext(self, algorithm)

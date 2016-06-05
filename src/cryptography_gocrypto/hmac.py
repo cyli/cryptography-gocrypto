@@ -41,10 +41,10 @@ class _HMACContext(object):
 
 
     def update(self, data):
-        self._backend._lib.UpdateHMAC(self._ctx[0], data, len(data))
+        self._backend._lib.UpdateHashOrHMAC(self._ctx[0], data, len(data))
 
     def finalize(self):
-        buf = self._backend._lib.FinalizeHMAC(self._ctx[0])
+        buf = self._backend._lib.FinalizeHashOrHMAC(self._ctx[0])
         assert buf != self._backend._ffi.NULL
         return self._backend._ffi.buffer(buf, self.algorithm.digest_size)[:]
 

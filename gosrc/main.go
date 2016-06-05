@@ -33,8 +33,8 @@ type refCounter struct {
 func (p *pointerProxy) UpRef(id C.longlong) {
 	p.Lock()
 	if r, ok := p.cache[id]; ok {
-		r.refCount += 1
-		log.Println("upref", r.refCount)
+		r.refCount++
+		log.Printf("upref ID %d to %d\n", id, r.refCount)
 	}
 	p.Unlock()
 }
@@ -43,15 +43,15 @@ func (p *pointerProxy) DownRef(id C.longlong) {
 	p.Lock()
 	if r, ok := p.cache[id]; ok {
 		if r.refCount-1 == 0 {
-			log.Println("downref deleting")
+			log.Printf("downref ID %d: no more refs, so deleting\b", id)
 			for _, ptr := range r.freeableData {
-				log.Println("deleting some data")
+				log.Printf("\tdownref ID %d: freeing attached data\n", id)
 				C.free(ptr)
 			}
 			delete(p.cache, id)
 		} else {
-			log.Println("downref not deleting", r.refCount)
-			r.refCount -= 1
+			r.refCount--
+			log.Printf("downref ID %d to %d\n", id, r.refCount)
 		}
 	}
 	p.Unlock()
@@ -77,93 +77,47 @@ func init() {
 	}
 }
 
-//export CreateHash
-func CreateHash(hashChar *C.char) C.longlong {
-	var ctx hash.Hash
-
-	hashType := C.GoString(hashChar)
-	switch hashType {
-	case "sha1":
-		ctx = sha1.New()
-	case "sha224":
-		ctx = sha256.New224()
-	case "sha256":
-		ctx = sha256.New()
-	case "sha384":
-		ctx = sha512.New384()
-	case "sha512":
-		ctx = sha512.New()
-	case "md5":
-		ctx = md5.New()
-	default:
-		return C.longlong(0)
-	}
-	return ptrProxy.Cache(ctx)
+var supportedHashes = map[string]func() hash.Hash{
+	"sha1":   sha1.New,
+	"sha224": sha256.New224,
+	"sha256": sha256.New,
+	"sha384": sha512.New384,
+	"sha512": sha512.New,
+	"md5":    md5.New,
 }
 
-//export UpdateHash
-func UpdateHash(id C.longlong, data *C.char, size C.int) C.longlong {
-	if refCounter, ok := ptrProxy.cache[id]; ok {
-		if hasher, ok := refCounter.opaqueObject.(hash.Hash); ok {
-			bytes := C.GoBytes(unsafe.Pointer(data), size)
-			hasher.Write(bytes)
-			return C.longlong(1)
-		}
+//export IsHashSupported
+func IsHashSupported(hashChar *C.char) C.int {
+	hashType := C.GoString(hashChar)
+	if _, ok := supportedHashes[hashType]; ok {
+		return C.int(1)
+	}
+	return C.int(0)
+}
+
+//export CreateHash
+func CreateHash(hashChar *C.char) C.longlong {
+	hashType := C.GoString(hashChar)
+	if hashFactory, ok := supportedHashes[hashType]; ok {
+		return ptrProxy.Cache(hashFactory())
 	}
 	return C.longlong(0)
 }
 
-//export FinalizeHash
-func FinalizeHash(id C.longlong) *C.char {
-	if refCounter, ok := ptrProxy.cache[id]; ok {
-		if hasher, ok := refCounter.opaqueObject.(hash.Hash); ok {
-			digest := C.CString(string(hasher.Sum(nil)))
-			refCounter.freeableData = append(refCounter.freeableData, unsafe.Pointer(digest))
-			return digest
-		}
-	}
-	return nil
-}
-
-//export CreateHMAC
-func CreateHMAC(hashChar *C.char, keyChar *C.char, keyLen C.int) C.longlong {
-	var h func() hash.Hash
-
-	key := C.GoBytes(unsafe.Pointer(keyChar), keyLen)
-
-	hashType := C.GoString(hashChar)
-	switch hashType {
-	case "sha1":
-		h = sha1.New
-	case "sha224":
-		h = sha256.New224
-	case "sha256":
-		h = sha256.New
-	case "sha384":
-		h = sha512.New384
-	case "sha512":
-		h = sha512.New
-	case "md5":
-		h = md5.New
-	default:
-		return C.longlong(0)
-	}
-	ctx := hmac.New(h, key)
-	return ptrProxy.Cache(ctx)
-}
-
-//export UpdateHMAC
-func UpdateHMAC(id C.longlong, data *C.char, dataLen C.int) {
+//export UpdateHashOrHMAC
+func UpdateHashOrHMAC(id C.longlong, data *C.char, dataLen C.int) C.int {
 	if refCounter, ok := ptrProxy.cache[id]; ok {
 		if ctx, ok := refCounter.opaqueObject.(hash.Hash); ok {
 			goData := C.GoBytes(unsafe.Pointer(data), dataLen)
 			ctx.Write(goData)
+			return C.int(1)
 		}
 	}
+	return C.int(0)
 }
 
-//export FinalizeHMAC
-func FinalizeHMAC(id C.longlong) *C.char {
+//export FinalizeHashOrHMAC
+func FinalizeHashOrHMAC(id C.longlong) *C.char {
 	if refCounter, ok := ptrProxy.cache[id]; ok {
 		if ctx, ok := refCounter.opaqueObject.(hash.Hash); ok {
 			digest := C.CString(string(ctx.Sum(nil)))
@@ -193,6 +147,16 @@ func CopyHashOrHMAC(id C.longlong) C.longlong {
 		if ctx, ok := refCounter.opaqueObject.(hash.Hash); ok {
 			return ptrProxy.Cache(copyHash(ctx))
 		}
+	}
+	return C.longlong(0)
+}
+
+//export CreateHMAC
+func CreateHMAC(hashChar *C.char, keyChar *C.char, keyLen C.int) C.longlong {
+	key := C.GoBytes(unsafe.Pointer(keyChar), keyLen)
+	hashType := C.GoString(hashChar)
+	if hashFactory, ok := supportedHashes[hashType]; ok {
+		return ptrProxy.Cache(hmac.New(hashFactory, key))
 	}
 	return C.longlong(0)
 }
@@ -252,7 +216,7 @@ func CreateCipher(cipherChar *C.char, modeChar *C.char, operation C.int,
 // assumption is that srcLen is always a multiple of the block size
 
 //export UpdateCipher
-func UpdateCipher(id C.longlong, dst *C.char, srcChar *C.char, srcLen C.int) {
+func UpdateCipher(id C.longlong, dst *C.char, srcChar *C.char, srcLen C.int) C.int {
 	if refCounter, ok := ptrProxy.cache[id]; ok {
 		if ctx, ok := refCounter.opaqueObject.(cipher.BlockMode); ok {
 			if int(srcLen)%ctx.BlockSize() != 0 {
@@ -263,8 +227,10 @@ func UpdateCipher(id C.longlong, dst *C.char, srcChar *C.char, srcLen C.int) {
 			ctx.CryptBlocks(src, src)
 			cBuf := (*[1 << 30]byte)(unsafe.Pointer(dst))
 			copy(cBuf[:], src)
+			return C.int(1)
 		}
 	}
+	return C.int(0)
 }
 
 //export UpRef
