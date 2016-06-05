@@ -18,7 +18,10 @@ void UpdateHash(GoInt, char *, GoInt);
 char *FinalizeHash(GoInt);
 GoInt CreateHMAC(char *, char *, int);
 void UpdateHMAC(GoInt, char *, int);
-char* FinalizeHMAC(GoInt p0);
+char* FinalizeHMAC(GoInt);
+GoInt CreateCipher(char *, char *, int, char *, int, char *, int);
+void UpdateCipher(GoInt, char *, char *, int);
+
 void UpRef(GoInt);
 void DownRef(GoInt);
 """)

@@ -4,6 +4,8 @@ package main
 import "C"
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/md5"
 	"crypto/sha1"
@@ -171,6 +173,90 @@ func FinalizeHMAC(id int) *C.char {
 		}
 	}
 	return nil
+}
+
+// type cipherConstructor struct {
+// 	blockConstructorTakesKey func([]byte) (cipher.Block, int, error)
+// 	blockSize                int
+// }
+
+// type blockCipherer struct {
+// 	block cipher.Block
+// 	iv []byte
+// 	encrypt bool
+
+// 	buffer []byte
+// }
+
+// var supportedCiphers = map[string]cipherConstructor{
+// 	"aes": cipherConstructor{
+// 		blockConstructorTakesKey: aes.NewCipher,
+// 		blockSize: aes.BlockSize,
+// 	},
+// 	// "blowfish": blowfish.NewCipher,
+// 	// "cast5":    cast5.NewCipher,
+// 	// "des":      des.NewCipher,
+// }
+
+// var supportedModes = map[string]... {
+// 	"cbc":
+// }
+
+func cacheThing(ctx interface{}) int {
+	if ptrProxy.cache == nil {
+		ptrProxy = pointerProxy{
+			cache: make(map[int]*refCounter),
+		}
+	}
+	mapKey := (*int)(unsafe.Pointer(&ctx))
+	ptrProxy.cache[*mapKey] = &refCounter{
+		opaqueObject: ctx,
+		refCount:     1,
+	}
+	return *mapKey
+}
+
+//export CreateCipher
+func CreateCipher(cipherChar *C.char, modeChar *C.char, operation C.int,
+	ivChar *C.char, ivLen C.int, keyChar *C.char, keyLen C.int) int {
+
+	// cipherType := C.GoString(cipherChar)
+	// modeType := C.GoString(modeChar)
+	iv := C.GoBytes(unsafe.Pointer(ivChar), ivLen)
+	key := C.GoBytes(unsafe.Pointer(keyChar), keyLen)
+
+	aesBlock, err := aes.NewCipher(key)
+	if err != nil {
+		return 0
+	}
+
+	var ctx cipher.BlockMode
+	switch operation {
+	case 0:
+		ctx = cipher.NewCBCEncrypter(aesBlock, iv)
+	default:
+		ctx = cipher.NewCBCDecrypter(aesBlock, iv)
+	}
+
+	return cacheThing(ctx)
+}
+
+// assumption is that srcLen is always a multiple of the block size
+
+//export UpdateCipher
+func UpdateCipher(id int, dst *C.char, srcChar *C.char, srcLen C.int) {
+	if refCounter, ok := ptrProxy.cache[id]; ok {
+		if ctx, ok := refCounter.opaqueObject.(cipher.BlockMode); ok {
+			if int(srcLen)%ctx.BlockSize() != 0 {
+				log.Fatalf("Passed non-block-aligned data to a block cipher")
+			}
+
+			src := C.GoBytes(unsafe.Pointer(srcChar), srcLen)
+			ctx.CryptBlocks(src, src)
+			cBuf := (*[1 << 30]byte)(unsafe.Pointer(dst))
+			copy(cBuf[:], src)
+		}
+	}
 }
 
 //export UpRef
